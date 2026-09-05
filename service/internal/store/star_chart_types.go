@@ -7,4 +7,6 @@ type StarChartRow struct {
 	SortOrder int
 	Active    bool
 	CreatedAt string
+	// ChildMemberID is zero when the chart covers every family member.
+	ChildMemberID int
 }

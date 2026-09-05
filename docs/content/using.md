@@ -36,6 +36,22 @@ day of this week.
 
 Completing a chore writes an award to that child’s ledger.
 
+### One chart per child
+
+A chart is for everyone by default: every person assigned a chore on it gets
+a column. With several children on the same chore list that grid gets wide,
+so a chart can instead belong to **one person**. Their chart shows only their
+column, and every chore added to it is theirs.
+
+To give each child their own copy of the same list, open a chart, use
+**Duplicate**, name the copy, and pick the person it is for. The chores, their
+star values and their schedules are copied over and reassigned to that person.
+The original chart is left alone, so repeat it once per child.
+
+A chart that already has chores assigned to several people cannot be narrowed
+down to one person afterwards — that would throw away the others’ completed
+days. Duplicate it instead.
+
 ## Awarding stars by hand
 
 From a person’s page, enter an amount and an optional note (“Helped with

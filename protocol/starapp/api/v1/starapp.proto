@@ -863,6 +863,9 @@ message StarChart {
   bool active = 5;
   string created_at = 6;
   int32 chore_count = 7;
+  // Zero means the chart covers everyone; otherwise it belongs to one person.
+  int32 child_member_id = 8;
+  string child_display_name = 9;
 }
 
 message ListStarChartsRequest {
@@ -877,6 +880,7 @@ message ListStarChartsResponse {
 message CreateStarChartRequest {
   string name = 1;
   int32 sort_order = 2;
+  int32 child_member_id = 3;
 }
 
 message CreateStarChartResponse {
@@ -889,6 +893,7 @@ message UpdateStarChartRequest {
   string name = 2;
   int32 sort_order = 3;
   bool active = 4;
+  int32 child_member_id = 5;
 }
 
 message UpdateStarChartResponse {
@@ -902,6 +907,17 @@ message DeleteStarChartRequest {
 
 message DeleteStarChartResponse {
   StandardResponse standard_response = 1;
+}
+
+message DuplicateStarChartRequest {
+  int32 id = 1;
+  string name = 2;
+  int32 child_member_id = 3;
+}
+
+message DuplicateStarChartResponse {
+  StandardResponse standard_response = 1;
+  StarChart star_chart = 2;
 }
 
 message ChorePause {
@@ -1132,6 +1148,7 @@ service StarAppService {
   rpc CreateStarChart(CreateStarChartRequest) returns (CreateStarChartResponse);
   rpc UpdateStarChart(UpdateStarChartRequest) returns (UpdateStarChartResponse);
   rpc DeleteStarChart(DeleteStarChartRequest) returns (DeleteStarChartResponse);
+  rpc DuplicateStarChart(DuplicateStarChartRequest) returns (DuplicateStarChartResponse);
   rpc ListChores(ListChoresRequest) returns (ListChoresResponse);
   rpc CreateChore(CreateChoreRequest) returns (CreateChoreResponse);
   rpc UpdateChore(UpdateChoreRequest) returns (UpdateChoreResponse);

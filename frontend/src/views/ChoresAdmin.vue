@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Section from 'picocrank/vue/components/Section.vue'
 import Table from 'picocrank/vue/components/Table.vue'
@@ -66,6 +66,21 @@ const starChartOptions = computed(() =>
     .map((c) => ({ label: c.name, value: c.id })),
 )
 
+// A chart that belongs to one person decides who its chores are for.
+const selectedChartChild = computed(() =>
+  starCharts.value.find((c) => c.id === form.starChartId)?.childMemberId || 0,
+)
+
+const selectedChartChildName = computed(
+  () => starCharts.value.find((c) => c.id === form.starChartId)?.childDisplayName || '',
+)
+
+watch(selectedChartChild, (childId) => {
+  if (childId) {
+    form.childMemberIds = [childId]
+  }
+})
+
 const starChartNames = computed(() => {
   const map = new Map<number, string>()
   for (const chart of starCharts.value) {
@@ -115,8 +130,8 @@ function resetCreateForm() {
   form.title = ''
   form.starReward = 1
   form.weekdays = [1, 2, 3, 4, 5, 6, 7]
-  form.childMemberIds = []
   form.starChartId = starChartOptions.value[0]?.value || 0
+  form.childMemberIds = selectedChartChild.value ? [selectedChartChild.value] : []
 }
 
 function resetPauseForm() {
@@ -279,7 +294,15 @@ onMounted(async () => {
         <CheckGroup v-model="form.weekdays" :options="weekdayOptions" name="chore-weekdays" />
       </FormField>
       <FormField label="Assigned people" component-has-label>
-        <CheckGroup v-model="form.childMemberIds" :options="personOptions" name="chore-people" />
+        <CheckGroup
+          v-if="!selectedChartChild"
+          v-model="form.childMemberIds"
+          :options="personOptions"
+          name="chore-people"
+        />
+        <span v-else class="subtle">
+          This chart belongs to {{ selectedChartChildName }}, so the chore is theirs.
+        </span>
       </FormField>
       <p v-if="createError" class="inline-notification error">{{ createError }}</p>
       <template #actions>

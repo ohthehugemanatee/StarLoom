@@ -74,11 +74,13 @@ type Store interface {
 	ListStarCharts(ctx context.Context, familyID int, includeInactive bool) ([]StarChartRow, error)
 	GetStarChartByID(ctx context.Context, id int) (*StarChartRow, error)
 	GetDefaultStarChartID(ctx context.Context, familyID int) (int, error)
-	CreateStarChart(ctx context.Context, familyID int, name string, sortOrder int) (int, error)
-	UpdateStarChart(ctx context.Context, id int, name string, sortOrder int, active bool) error
+	CreateStarChart(ctx context.Context, familyID int, name string, sortOrder, childMemberID int) (int, error)
+	UpdateStarChart(ctx context.Context, id int, name string, sortOrder int, active bool, childMemberID int) error
 	DeleteStarChart(ctx context.Context, id int) error
+	DuplicateStarChart(ctx context.Context, sourceID, familyID int, name string, sortOrder, childMemberID int) (int, error)
 	CountChoresForStarChart(ctx context.Context, starChartID int) (int, error)
 	CountChoresForStarChartAndMember(ctx context.Context, starChartID, memberID int) (int, error)
+	ListStarChartAssignees(ctx context.Context, starChartID int) ([]int, error)
 
 	ListChorePauses(ctx context.Context, familyID int) ([]ChorePauseRow, error)
 	CreateChorePause(ctx context.Context, familyID int, startDate, endDate, reason string) (int, error)

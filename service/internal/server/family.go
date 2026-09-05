@@ -51,7 +51,7 @@ func (s *Server) CreateFamily(ctx context.Context, req *connect.Request[apiv1.Cr
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
-	if _, err := s.store.CreateStarChart(ctx, familyID, "Star Chart", 0); err != nil {
+	if _, err := s.store.CreateStarChart(ctx, familyID, "Star Chart", 0, 0); err != nil {
 		return nil, mapStoreError(err)
 	}
 	memberID, err := s.store.CreateMember(ctx, familyID, au.User.Username, store.MemberRoleParent, &au.User.ID, "")

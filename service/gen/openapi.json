@@ -1568,6 +1568,64 @@
         }
       }
     },
+    "/api/starapp.api.v1.StarAppService/DuplicateStarChart": {
+      "post": {
+        "tags": [
+          "starapp.api.v1.StarAppService"
+        ],
+        "summary": "DuplicateStarChart",
+        "operationId": "starapp.api.v1.StarAppService.DuplicateStarChart",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/starapp.api.v1.DuplicateStarChartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/starapp.api.v1.DuplicateStarChartResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/starapp.api.v1.StarAppService/FireTestWebhooks": {
       "post": {
         "tags": [
@@ -5805,6 +5863,11 @@
             "type": "integer",
             "title": "sort_order",
             "format": "int32"
+          },
+          "childMemberId": {
+            "type": "integer",
+            "title": "child_member_id",
+            "format": "int32"
           }
         },
         "title": "CreateStarChartRequest",
@@ -6186,6 +6249,42 @@
       "starapp.api.v1.DeleteWebhookResponse": {
         "type": "object",
         "title": "DeleteWebhookResponse",
+        "additionalProperties": false
+      },
+      "starapp.api.v1.DuplicateStarChartRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "id",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string",
+            "title": "name"
+          },
+          "childMemberId": {
+            "type": "integer",
+            "title": "child_member_id",
+            "format": "int32"
+          }
+        },
+        "title": "DuplicateStarChartRequest",
+        "additionalProperties": false
+      },
+      "starapp.api.v1.DuplicateStarChartResponse": {
+        "type": "object",
+        "properties": {
+          "standardResponse": {
+            "title": "standard_response",
+            "$ref": "#/components/schemas/starapp.api.v1.StandardResponse"
+          },
+          "starChart": {
+            "title": "star_chart",
+            "$ref": "#/components/schemas/starapp.api.v1.StarChart"
+          }
+        },
+        "title": "DuplicateStarChartResponse",
         "additionalProperties": false
       },
       "starapp.api.v1.Family": {
@@ -8055,6 +8154,16 @@
             "type": "integer",
             "title": "chore_count",
             "format": "int32"
+          },
+          "childMemberId": {
+            "type": "integer",
+            "title": "child_member_id",
+            "format": "int32",
+            "description": "Zero means the chart covers everyone; otherwise it belongs to one person."
+          },
+          "childDisplayName": {
+            "type": "string",
+            "title": "child_display_name"
           }
         },
         "title": "StarChart",
@@ -8474,6 +8583,11 @@
           "active": {
             "type": "boolean",
             "title": "active"
+          },
+          "childMemberId": {
+            "type": "integer",
+            "title": "child_member_id",
+            "format": "int32"
           }
         },
         "title": "UpdateStarChartRequest",

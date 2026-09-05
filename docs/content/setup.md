@@ -62,6 +62,11 @@ Chores** to add chores:
 - Which people it applies to
 - Which star chart it belongs to
 
+A chart covers everyone unless you set it to one person. A chart for one
+person shows only their column, and every chore on it is automatically theirs.
+Once one child’s chart is set up, **Duplicate** copies its chores onto a new
+chart for the next child.
+
 The chart is a Monday–Sunday grid. Completing a scheduled cell awards those
 stars.
 

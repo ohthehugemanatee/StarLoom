@@ -260,6 +260,9 @@ const (
 	// StarAppServiceDeleteStarChartProcedure is the fully-qualified name of the StarAppService's
 	// DeleteStarChart RPC.
 	StarAppServiceDeleteStarChartProcedure = "/starapp.api.v1.StarAppService/DeleteStarChart"
+	// StarAppServiceDuplicateStarChartProcedure is the fully-qualified name of the StarAppService's
+	// DuplicateStarChart RPC.
+	StarAppServiceDuplicateStarChartProcedure = "/starapp.api.v1.StarAppService/DuplicateStarChart"
 	// StarAppServiceListChoresProcedure is the fully-qualified name of the StarAppService's ListChores
 	// RPC.
 	StarAppServiceListChoresProcedure = "/starapp.api.v1.StarAppService/ListChores"
@@ -374,6 +377,7 @@ type StarAppServiceClient interface {
 	CreateStarChart(context.Context, *connect.Request[v1.CreateStarChartRequest]) (*connect.Response[v1.CreateStarChartResponse], error)
 	UpdateStarChart(context.Context, *connect.Request[v1.UpdateStarChartRequest]) (*connect.Response[v1.UpdateStarChartResponse], error)
 	DeleteStarChart(context.Context, *connect.Request[v1.DeleteStarChartRequest]) (*connect.Response[v1.DeleteStarChartResponse], error)
+	DuplicateStarChart(context.Context, *connect.Request[v1.DuplicateStarChartRequest]) (*connect.Response[v1.DuplicateStarChartResponse], error)
 	ListChores(context.Context, *connect.Request[v1.ListChoresRequest]) (*connect.Response[v1.ListChoresResponse], error)
 	CreateChore(context.Context, *connect.Request[v1.CreateChoreRequest]) (*connect.Response[v1.CreateChoreResponse], error)
 	UpdateChore(context.Context, *connect.Request[v1.UpdateChoreRequest]) (*connect.Response[v1.UpdateChoreResponse], error)
@@ -860,6 +864,12 @@ func NewStarAppServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(starAppServiceMethods.ByName("DeleteStarChart")),
 			connect.WithClientOptions(opts...),
 		),
+		duplicateStarChart: connect.NewClient[v1.DuplicateStarChartRequest, v1.DuplicateStarChartResponse](
+			httpClient,
+			baseURL+StarAppServiceDuplicateStarChartProcedure,
+			connect.WithSchema(starAppServiceMethods.ByName("DuplicateStarChart")),
+			connect.WithClientOptions(opts...),
+		),
 		listChores: connect.NewClient[v1.ListChoresRequest, v1.ListChoresResponse](
 			httpClient,
 			baseURL+StarAppServiceListChoresProcedure,
@@ -1008,6 +1018,7 @@ type starAppServiceClient struct {
 	createStarChart                          *connect.Client[v1.CreateStarChartRequest, v1.CreateStarChartResponse]
 	updateStarChart                          *connect.Client[v1.UpdateStarChartRequest, v1.UpdateStarChartResponse]
 	deleteStarChart                          *connect.Client[v1.DeleteStarChartRequest, v1.DeleteStarChartResponse]
+	duplicateStarChart                       *connect.Client[v1.DuplicateStarChartRequest, v1.DuplicateStarChartResponse]
 	listChores                               *connect.Client[v1.ListChoresRequest, v1.ListChoresResponse]
 	createChore                              *connect.Client[v1.CreateChoreRequest, v1.CreateChoreResponse]
 	updateChore                              *connect.Client[v1.UpdateChoreRequest, v1.UpdateChoreResponse]
@@ -1410,6 +1421,11 @@ func (c *starAppServiceClient) DeleteStarChart(ctx context.Context, req *connect
 	return c.deleteStarChart.CallUnary(ctx, req)
 }
 
+// DuplicateStarChart calls starapp.api.v1.StarAppService.DuplicateStarChart.
+func (c *starAppServiceClient) DuplicateStarChart(ctx context.Context, req *connect.Request[v1.DuplicateStarChartRequest]) (*connect.Response[v1.DuplicateStarChartResponse], error) {
+	return c.duplicateStarChart.CallUnary(ctx, req)
+}
+
 // ListChores calls starapp.api.v1.StarAppService.ListChores.
 func (c *starAppServiceClient) ListChores(ctx context.Context, req *connect.Request[v1.ListChoresRequest]) (*connect.Response[v1.ListChoresResponse], error) {
 	return c.listChores.CallUnary(ctx, req)
@@ -1544,6 +1560,7 @@ type StarAppServiceHandler interface {
 	CreateStarChart(context.Context, *connect.Request[v1.CreateStarChartRequest]) (*connect.Response[v1.CreateStarChartResponse], error)
 	UpdateStarChart(context.Context, *connect.Request[v1.UpdateStarChartRequest]) (*connect.Response[v1.UpdateStarChartResponse], error)
 	DeleteStarChart(context.Context, *connect.Request[v1.DeleteStarChartRequest]) (*connect.Response[v1.DeleteStarChartResponse], error)
+	DuplicateStarChart(context.Context, *connect.Request[v1.DuplicateStarChartRequest]) (*connect.Response[v1.DuplicateStarChartResponse], error)
 	ListChores(context.Context, *connect.Request[v1.ListChoresRequest]) (*connect.Response[v1.ListChoresResponse], error)
 	CreateChore(context.Context, *connect.Request[v1.CreateChoreRequest]) (*connect.Response[v1.CreateChoreResponse], error)
 	UpdateChore(context.Context, *connect.Request[v1.UpdateChoreRequest]) (*connect.Response[v1.UpdateChoreResponse], error)
@@ -2026,6 +2043,12 @@ func NewStarAppServiceHandler(svc StarAppServiceHandler, opts ...connect.Handler
 		connect.WithSchema(starAppServiceMethods.ByName("DeleteStarChart")),
 		connect.WithHandlerOptions(opts...),
 	)
+	starAppServiceDuplicateStarChartHandler := connect.NewUnaryHandler(
+		StarAppServiceDuplicateStarChartProcedure,
+		svc.DuplicateStarChart,
+		connect.WithSchema(starAppServiceMethods.ByName("DuplicateStarChart")),
+		connect.WithHandlerOptions(opts...),
+	)
 	starAppServiceListChoresHandler := connect.NewUnaryHandler(
 		StarAppServiceListChoresProcedure,
 		svc.ListChores,
@@ -2248,6 +2271,8 @@ func NewStarAppServiceHandler(svc StarAppServiceHandler, opts ...connect.Handler
 			starAppServiceUpdateStarChartHandler.ServeHTTP(w, r)
 		case StarAppServiceDeleteStarChartProcedure:
 			starAppServiceDeleteStarChartHandler.ServeHTTP(w, r)
+		case StarAppServiceDuplicateStarChartProcedure:
+			starAppServiceDuplicateStarChartHandler.ServeHTTP(w, r)
 		case StarAppServiceListChoresProcedure:
 			starAppServiceListChoresHandler.ServeHTTP(w, r)
 		case StarAppServiceCreateChoreProcedure:
@@ -2585,6 +2610,10 @@ func (UnimplementedStarAppServiceHandler) UpdateStarChart(context.Context, *conn
 
 func (UnimplementedStarAppServiceHandler) DeleteStarChart(context.Context, *connect.Request[v1.DeleteStarChartRequest]) (*connect.Response[v1.DeleteStarChartResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("starapp.api.v1.StarAppService.DeleteStarChart is not implemented"))
+}
+
+func (UnimplementedStarAppServiceHandler) DuplicateStarChart(context.Context, *connect.Request[v1.DuplicateStarChartRequest]) (*connect.Response[v1.DuplicateStarChartResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("starapp.api.v1.StarAppService.DuplicateStarChart is not implemented"))
 }
 
 func (UnimplementedStarAppServiceHandler) ListChores(context.Context, *connect.Request[v1.ListChoresRequest]) (*connect.Response[v1.ListChoresResponse], error) {
