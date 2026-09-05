@@ -15,6 +15,7 @@ const loading = ref(true)
 
 const tableHeaders = [
   { key: 'name', label: 'Name', sortable: true },
+  { key: 'forWhom', label: 'For', sortable: true, width: '10rem' },
   { key: 'choreCount', label: 'Chores', sortable: true, width: '7rem' },
   { key: 'status', label: 'Status', sortable: true, width: '7rem' },
   { key: 'actions', label: 'Actions', sortable: false, width: '10rem' },
@@ -24,6 +25,7 @@ const listRows = computed(() =>
   charts.value.map((c) => ({
     id: c.id,
     name: c.name,
+    forWhom: c.childDisplayName || 'Everyone',
     choreCount: c.choreCount ?? 0,
     status: c.active !== false ? 'Active' : 'Inactive',
     active: c.active !== false,
@@ -49,7 +51,7 @@ onMounted(load)
 
 <template>
   <Section
-    subtitle="Each chart shows a weekly grid for its assigned chores."
+    subtitle="Each chart shows a weekly grid for its assigned chores, for everyone or for one person."
     classes="star-charts-list"
     :padding="false"
   >

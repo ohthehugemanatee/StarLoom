@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Section from 'picocrank/vue/components/Section.vue'
 import FormField from 'picocrank/vue/components/FormField.vue'
@@ -7,7 +7,7 @@ import FormLayout from 'picocrank/vue/components/FormLayout.vue'
 import RadioGroup from 'picocrank/vue/components/RadioGroup.vue'
 import { HugeiconsIcon } from '@hugeicons/vue'
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowUp01Icon, StarIcon } from '@hugeicons/core-free-icons'
-import { starapp, type Chore, type StarChart } from '../api/client'
+import { starapp, type Chore, type FamilyMember, type StarChart } from '../api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +15,8 @@ const chartId = computed(() => Number(route.params.id))
 
 const chart = ref<StarChart | null>(null)
 const chores = ref<Chore[]>([])
+const people = ref<FamilyMember[]>([])
+const duplicating = ref(false)
 const dragIndex = ref(-1)
 const reordering = ref(false)
 const error = ref('')
@@ -25,6 +27,12 @@ const form = reactive({
   name: '',
   sortOrder: 0,
   active: true,
+  childMemberId: 0,
+})
+
+const duplicateForm = reactive({
+  name: '',
+  childMemberId: 0,
 })
 
 const booleanOptions = [
@@ -33,6 +41,11 @@ const booleanOptions = [
 ]
 
 const sectionTitle = computed(() => chart.value?.name || 'Edit star chart')
+
+const chartOwnerOptions = computed(() => [
+  { label: 'Everyone', value: 0 },
+  ...people.value.map((m) => ({ label: m.displayName, value: m.id })),
+])
 
 async function load() {
   loading.value = true
@@ -47,8 +60,15 @@ async function load() {
     form.name = chart.value.name
     form.sortOrder = chart.value.sortOrder ?? 0
     form.active = chart.value.active !== false
-    const choreRes = await starapp.listChores({ starChartId: chartId.value })
+    form.childMemberId = chart.value.childMemberId ?? 0
+    duplicateForm.name = `${chart.value.name} (copy)`
+    duplicateForm.childMemberId = 0
+    const [choreRes, memberRes] = await Promise.all([
+      starapp.listChores({ starChartId: chartId.value }),
+      starapp.listMembers(),
+    ])
     chores.value = choreRes.chores || []
+    people.value = memberRes.members || []
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -66,12 +86,37 @@ async function save() {
       name: form.name.trim(),
       sortOrder: form.sortOrder,
       active: form.active,
+      childMemberId: form.childMemberId || undefined,
     })
     router.push({ name: 'familyStarCharts' })
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     saving.value = false
+  }
+}
+
+// Copies this chart's chores onto a new chart, so each person can have their own.
+async function duplicateChart() {
+  if (!chart.value) return
+  duplicating.value = true
+  error.value = ''
+  try {
+    const res = await starapp.duplicateStarChart({
+      id: chart.value.id,
+      name: duplicateForm.name.trim(),
+      childMemberId: duplicateForm.childMemberId || undefined,
+    })
+    const id = res.starChart?.id
+    if (id) {
+      router.push({ name: 'familyStarChartEdit', params: { id } })
+    } else {
+      router.push({ name: 'familyStarCharts' })
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    duplicating.value = false
   }
 }
 
@@ -120,6 +165,8 @@ async function removeChart() {
 }
 
 onMounted(load)
+// Duplicating routes to the copy's edit page, which reuses this component.
+watch(chartId, load)
 </script>
 
 <template>
@@ -134,10 +181,24 @@ onMounted(load)
     <p v-if="loading" class="subtle">Loading…</p>
     <p v-else-if="error && !chart" class="inline-notification error">{{ error }}</p>
 
-    <FormLayout v-else @submit.prevent="save">
-      <p v-if="error" class="inline-notification error">{{ error }}</p>
+    <template v-else>
+    <p v-if="error" class="inline-notification error">{{ error }}</p>
+
+    <FormLayout @submit.prevent="save">
       <FormField label="Name" for="star-chart-edit-name">
         <input id="star-chart-edit-name" v-model="form.name" type="text" required />
+      </FormField>
+      <FormField label="For" component-has-label>
+        <RadioGroup
+          v-model="form.childMemberId"
+          variant="list"
+          :options="chartOwnerOptions"
+          name="star-chart-edit-child"
+        />
+        <small class="subtle">
+          A chart for one person shows only their column, and every chore on it is theirs. A chart
+          with chores already assigned to other people cannot be narrowed down; duplicate it instead.
+        </small>
       </FormField>
       <FormField label="Sort order" for="star-chart-edit-sort">
         <input id="star-chart-edit-sort" v-model.number="form.sortOrder" type="number" min="0" />
@@ -167,8 +228,33 @@ onMounted(load)
         </button>
       </template>
     </FormLayout>
+    </template>
 
     <template v-if="!loading && chart">
+      <h3>Duplicate</h3>
+      <p class="subtle">
+        Copy this chart's chores onto a new chart. Pick a person to give them their own copy of the
+        list.
+      </p>
+      <FormLayout @submit.prevent="duplicateChart">
+        <FormField label="New chart name" for="star-chart-duplicate-name">
+          <input id="star-chart-duplicate-name" v-model="duplicateForm.name" type="text" required />
+        </FormField>
+        <FormField label="For" component-has-label>
+          <RadioGroup
+            v-model="duplicateForm.childMemberId"
+            variant="list"
+            :options="chartOwnerOptions"
+            name="star-chart-duplicate-child"
+          />
+        </FormField>
+        <template #actions>
+          <button type="submit" class="neutral" :disabled="duplicating || !duplicateForm.name.trim()">
+            {{ duplicating ? 'Duplicating…' : 'Duplicate chart' }}
+          </button>
+        </template>
+      </FormLayout>
+
       <h3>Chore order</h3>
       <p class="subtle">Drag a row, or use the arrows, to set the order chores appear on the chart.</p>
       <table v-if="chores.length" class="chore-order">

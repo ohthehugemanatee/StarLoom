@@ -124,12 +124,12 @@ func (s *Server) CreateChore(ctx context.Context, req *connect.Request[apiv1.Cre
 	if reward > cvar.MaxAwardStars {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("star_reward must be 1-%d", cvar.MaxAwardStars))
 	}
-	childIDs, err := s.validateChoreMemberIDs(ctx, fc.family.ID, req.Msg.ChildMemberIds)
+	mask := weekdaysToMask(req.Msg.Weekdays)
+	starChartID, starChart, err := s.resolveStarChartID(ctx, fc.family.ID, int(req.Msg.StarChartId))
 	if err != nil {
 		return nil, err
 	}
-	mask := weekdaysToMask(req.Msg.Weekdays)
-	starChartID, _, err := s.resolveStarChartID(ctx, fc.family.ID, int(req.Msg.StarChartId))
+	childIDs, err := s.resolveChoreMemberIDs(ctx, fc.family.ID, starChart, req.Msg.ChildMemberIds)
 	if err != nil {
 		return nil, err
 	}
@@ -163,25 +163,18 @@ func (s *Server) UpdateChore(ctx context.Context, req *connect.Request[apiv1.Upd
 	if reward <= 0 {
 		reward = 1
 	}
-	childIDs, err := s.validateChoreMemberIDs(ctx, fc.family.ID, req.Msg.ChildMemberIds)
-	if err != nil {
-		return nil, err
-	}
 	mask := weekdaysToMask(req.Msg.Weekdays)
 	starChartID := cw.Chore.StarChartID
 	if req.Msg.StarChartId > 0 {
-		id, _, err := s.resolveStarChartID(ctx, fc.family.ID, int(req.Msg.StarChartId))
-		if err != nil {
-			return nil, err
-		}
-		starChartID = id
+		starChartID = int(req.Msg.StarChartId)
 	}
-	if starChartID == 0 {
-		id, _, err := s.resolveStarChartID(ctx, fc.family.ID, 0)
-		if err != nil {
-			return nil, err
-		}
-		starChartID = id
+	starChartID, starChart, err := s.resolveStarChartID(ctx, fc.family.ID, starChartID)
+	if err != nil {
+		return nil, err
+	}
+	childIDs, err := s.resolveChoreMemberIDs(ctx, fc.family.ID, starChart, req.Msg.ChildMemberIds)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.store.UpdateChore(ctx, cw.Chore.ID, starChartID, req.Msg.Title, reward, mask, req.Msg.Active, childIDs); err != nil {
 		return nil, mapStoreError(err)
@@ -374,6 +367,12 @@ func (s *Server) GetWeeklyStarChart(ctx context.Context, req *connect.Request[ap
 	}
 
 	childFilter := s.chartChildFilter(fc)
+	if starChart.ChildMemberID != 0 {
+		if childFilter != 0 && childFilter != starChart.ChildMemberID {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("star chart not found"))
+		}
+		childFilter = starChart.ChildMemberID
+	}
 	out := &apiv1.GetWeeklyStarChartResponse{
 		WeekStart:     weekStart,
 		WeekEnd:       weekEnd,
@@ -594,6 +593,22 @@ func (s *Server) validateReorderChoreIDs(ctx context.Context, familyID int, ids 
 		out = append(out, int(id))
 	}
 	return out, nil
+}
+
+// resolveChoreMemberIDs picks the people a chore is for. A chart that belongs
+// to one person forces that answer, so chores on it cannot drift to somebody
+// else.
+func (s *Server) resolveChoreMemberIDs(ctx context.Context, familyID int, chart *store.StarChartRow, ids []int32) ([]int, error) {
+	if chart == nil || chart.ChildMemberID == 0 {
+		return s.validateChoreMemberIDs(ctx, familyID, ids)
+	}
+	for _, id := range ids {
+		if int(id) != chart.ChildMemberID {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("this star chart belongs to one person; chores on it cannot be assigned to member %d", id))
+		}
+	}
+	return []int{chart.ChildMemberID}, nil
 }
 
 func (s *Server) validateChoreMemberIDs(ctx context.Context, familyID int, ids []int32) ([]int, error) {

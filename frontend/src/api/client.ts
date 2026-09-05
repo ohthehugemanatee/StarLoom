@@ -138,6 +138,20 @@ export type MyPermissionAuditRow = {
   grantingGroups?: string[]
 }
 
+// Connect returns {"code":..,"message":..} on failure; without this every error
+// reaches the user as a bare status code.
+async function connectErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json()
+    if (typeof body?.message === 'string' && body.message) {
+      return body.message
+    }
+  } catch {
+    // fall through to the status text
+  }
+  return res.statusText || `Request failed: ${res.status}`
+}
+
 async function connectFetch<T>(
   procedure: string,
   request: Record<string, unknown> = {},
@@ -152,7 +166,7 @@ async function connectFetch<T>(
     body: JSON.stringify(request),
   })
   if (!res.ok) {
-    throw new Error(res.statusText || `Request failed: ${res.status}`)
+    throw new Error(await connectErrorMessage(res))
   }
   return res.json() as Promise<T>
 }
@@ -636,13 +650,19 @@ export const starapp = {
       body,
     )
   },
-  createStarChart(body: { name: string; sortOrder?: number }) {
+  createStarChart(body: { name: string; sortOrder?: number; childMemberId?: number }) {
     return connectFetch<{ standardResponse?: StandardResponse; starChart?: StarChart }>(
       '/starapp.api.v1.StarAppService/CreateStarChart',
       body,
     )
   },
-  updateStarChart(body: { id: number; name: string; sortOrder?: number; active: boolean }) {
+  updateStarChart(body: {
+    id: number
+    name: string
+    sortOrder?: number
+    active: boolean
+    childMemberId?: number
+  }) {
     return connectFetch<{ standardResponse?: StandardResponse; starChart?: StarChart }>(
       '/starapp.api.v1.StarAppService/UpdateStarChart',
       body,
@@ -651,6 +671,12 @@ export const starapp = {
   deleteStarChart(body: { id: number }) {
     return connectFetch<{ standardResponse?: StandardResponse }>(
       '/starapp.api.v1.StarAppService/DeleteStarChart',
+      body,
+    )
+  },
+  duplicateStarChart(body: { id: number; name: string; childMemberId?: number }) {
+    return connectFetch<{ standardResponse?: StandardResponse; starChart?: StarChart }>(
+      '/starapp.api.v1.StarAppService/DuplicateStarChart',
       body,
     )
   },
@@ -798,6 +824,8 @@ export type StarChart = {
   active?: boolean
   createdAt?: string
   choreCount?: number
+  childMemberId?: number
+  childDisplayName?: string
 }
 
 export type ChorePause = {
