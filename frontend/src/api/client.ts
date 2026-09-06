@@ -1,4 +1,4 @@
-import { bearerToken, clearBearerToken, hrefWithToken } from '../lib/bearerToken'
+import { bearerToken, clearBearerToken, hrefWithToken } from '../lib/bearerToken.ts'
 
 const base = '/api'
 
@@ -43,6 +43,8 @@ export type UserAccount = {
   username: string
   createdAt?: string
   createdBy?: string
+  userGroups?: UserGroup[]
+  linkedMember?: FamilyMember
 }
 
 export type RbacPermission = {
@@ -140,6 +142,24 @@ export type MyPermissionAuditRow = {
   grantingGroups?: string[]
 }
 
+type ConnectErrorBody = {
+  code?: string
+  message?: string
+}
+
+async function readConnectError(res: Response): Promise<string> {
+  const fallback = res.statusText || `Request failed: ${res.status}`
+  try {
+    const body = (await res.json()) as ConnectErrorBody
+    if (typeof body.message === 'string' && body.message.trim()) {
+      return body.message.trim()
+    }
+  } catch {
+    // Non-JSON error bodies fall back to status text.
+  }
+  return fallback
+}
+
 async function connectFetch<T>(
   procedure: string,
   request: Record<string, unknown> = {},
@@ -159,7 +179,7 @@ async function connectFetch<T>(
     body: JSON.stringify(request),
   })
   if (!res.ok) {
-    throw new Error(res.statusText || `Request failed: ${res.status}`)
+    throw new Error(await readConnectError(res))
   }
   return res.json() as Promise<T>
 }
@@ -266,6 +286,18 @@ export const starapp = {
     return connectFetch<{ groups: UserGroup[] }>(
       '/starapp.api.v1.StarAppService/ListUserGroups',
       {},
+    )
+  },
+  createUserGroup(body: { name: string }) {
+    return connectFetch<{ group?: UserGroup }>(
+      '/starapp.api.v1.StarAppService/CreateUserGroup',
+      body,
+    )
+  },
+  deleteUserGroup(body: { groupId: number }) {
+    return connectFetch<Record<string, never>>(
+      '/starapp.api.v1.StarAppService/DeleteUserGroup',
+      body,
     )
   },
   getUserGroupMembers(body: { groupId: number }) {
