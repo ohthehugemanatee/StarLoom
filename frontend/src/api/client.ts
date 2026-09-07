@@ -1,3 +1,5 @@
+import { bearerToken, clearBearerToken, hrefWithToken } from '../lib/bearerToken.ts'
+
 const base = '/api'
 
 export type Features = {
@@ -41,6 +43,8 @@ export type UserAccount = {
   username: string
   createdAt?: string
   createdBy?: string
+  userGroups?: UserGroup[]
+  linkedMember?: FamilyMember
 }
 
 export type RbacPermission = {
@@ -138,21 +142,44 @@ export type MyPermissionAuditRow = {
   grantingGroups?: string[]
 }
 
+type ConnectErrorBody = {
+  code?: string
+  message?: string
+}
+
+async function readConnectError(res: Response): Promise<string> {
+  const fallback = res.statusText || `Request failed: ${res.status}`
+  try {
+    const body = (await res.json()) as ConnectErrorBody
+    if (typeof body.message === 'string' && body.message.trim()) {
+      return body.message.trim()
+    }
+  } catch {
+    // Non-JSON error bodies fall back to status text.
+  }
+  return fallback
+}
+
 async function connectFetch<T>(
   procedure: string,
   request: Record<string, unknown> = {},
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+  const token = bearerToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
   const res = await fetch(base + procedure, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
+    headers,
     credentials: 'include',
     body: JSON.stringify(request),
   })
   if (!res.ok) {
-    throw new Error(res.statusText || `Request failed: ${res.status}`)
+    throw new Error(await readConnectError(res))
   }
   return res.json() as Promise<T>
 }
@@ -165,12 +192,15 @@ export const starapp = {
     return connectFetch<InitResponse>('/starapp.api.v1.StarAppService/Init', {})
   },
   loginWithUsernameAndPassword(body: { username: string; password: string }) {
+    // Password login replaces any token identity.
+    clearBearerToken()
     return connectFetch<{ standardResponse?: StandardResponse; username?: string }>(
       '/starapp.api.v1.StarAppService/LoginWithUsernameAndPassword',
       body,
     )
   },
   logout() {
+    clearBearerToken()
     return connectFetch<{ standardResponse?: StandardResponse }>(
       '/starapp.api.v1.StarAppService/Logout',
       {},
@@ -258,6 +288,18 @@ export const starapp = {
       {},
     )
   },
+  createUserGroup(body: { name: string }) {
+    return connectFetch<{ group?: UserGroup }>(
+      '/starapp.api.v1.StarAppService/CreateUserGroup',
+      body,
+    )
+  },
+  deleteUserGroup(body: { groupId: number }) {
+    return connectFetch<Record<string, never>>(
+      '/starapp.api.v1.StarAppService/DeleteUserGroup',
+      body,
+    )
+  },
   getUserGroupMembers(body: { groupId: number }) {
     return connectFetch<{ members: UserAccount[] }>(
       '/starapp.api.v1.StarAppService/GetUserGroupMembers',
@@ -330,6 +372,12 @@ export const starapp = {
   },
   deleteApiKey(body: { id: number }) {
     return connectFetch<object>('/starapp.api.v1.StarAppService/DeleteApiKey', body)
+  },
+  regenerateApiKey(body: { id: number }) {
+    return connectFetch<{ key: ApiKey; secret?: string }>(
+      '/starapp.api.v1.StarAppService/RegenerateApiKey',
+      body,
+    )
   },
   listCvars() {
     return connectFetch<{ cvars: Cvar[] }>('/starapp.api.v1.StarAppService/ListCvars', {})
@@ -847,7 +895,7 @@ export type WeeklyStarChart = {
 
 export function memberAvatarUrl(memberId: number, hasAvatar?: boolean): string {
   if (!hasAvatar) return ''
-  return `/avatars/${memberId}`
+  return hrefWithToken(`/avatars/${memberId}`, bearerToken())
 }
 
 export function memberAvatarFileUrl(memberId: number, filename: string): string {

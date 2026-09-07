@@ -102,6 +102,8 @@ message UserAccount {
   string username = 2;
   string created_at = 3;
   string created_by = 4;
+  repeated UserGroup user_groups = 5;
+  FamilyMember linked_member = 6;
 }
 
 message GetUsersRequest {}
@@ -339,6 +341,15 @@ message DeleteApiKeyRequest {
 }
 
 message DeleteApiKeyResponse {}
+
+message RegenerateApiKeyRequest {
+  int32 id = 1;
+}
+
+message RegenerateApiKeyResponse {
+  ApiKey key = 1;
+  string secret = 2;
+}
 
 message Cvar {
   string key = 1;
@@ -1088,6 +1099,7 @@ service StarAppService {
   rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse);
   rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse);
   rpc DeleteApiKey(DeleteApiKeyRequest) returns (DeleteApiKeyResponse);
+  rpc RegenerateApiKey(RegenerateApiKeyRequest) returns (RegenerateApiKeyResponse);
   rpc ListCvars(ListCvarsRequest) returns (ListCvarsResponse);
   rpc UpdateCvar(UpdateCvarRequest) returns (Cvar);
   rpc ListWebhooks(ListWebhooksRequest) returns (ListWebhooksResponse);
