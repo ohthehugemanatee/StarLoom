@@ -106,6 +106,32 @@ Regenerate OpenAPI after proto changes:
 make -C protocol
 ```
 
+## Branching and pull requests
+
+Open all pull requests against the **`next`** branch, not `main`. The `next` branch is **commits queued for the next release**. Admins occasionally merge `next` into `main` to cut a new release; `main` reflects what is currently released (or release-ready).
+
+When creating or retargeting PRs, use `next` as the base branch.
+
+## Commit authorship
+
+StarApp requires every commit to be attributable to a **human**. When you help with changes:
+
+1. **Do not commit** unless the user explicitly asks you to.
+2. **Never set yourself as the commit author.** The `Author` field must be the human who requested and owns the change (their configured `user.name` and `user.email`).
+3. **Add a `Co-authored-by` trailer** when an agent assisted with the commit, so assistant involvement is still recorded.
+
+Include the co-author trailer in the commit message body (after a blank line following the subject):
+
+```
+fix: correct star balance on redemption
+
+Co-authored-by: Cursor Agent <cursoragent@cursor.com>
+```
+
+Use the actual agent or product name (e.g. `Cursor Agent`, `GitHub Copilot`, `Claude`) and a stable noreply or vendor-provided address when one exists. If the human runs `git commit` themselves, remind them to add the trailer or provide a complete message they can paste.
+
+Do not change `git config` to impersonate the user or the agent.
+
 ## Frontend forms
 
 Wrap every data-entry form in PicoCrank **`FormLayout`** with **`FormField`** children. Put primary and secondary actions in the `#actions` slot; use `@submit.prevent` on `FormLayout` and `type="submit"` on the primary button.
@@ -200,7 +226,9 @@ Toolbar rules:
 </Section>
 ```
 
-Row-level destructive actions (e.g. Deactivate on a table row) may stay inline in the table. Reference: `ChoresAdmin.vue`, `StarChart.vue`, `WebhooksAdmin.vue`.
+Row-level non-delete destructive actions (e.g. **Deactivate** on a chore row, **Revoke** on a ledger entry) may stay inline in the table. Reference: `ChoresAdmin.vue`, `ChildDetail.vue`.
+
+**Delete** actions do **not** belong in datatable rows or action columns. Put delete only in a PicoCrank **`DangerZone`** on the item **detail or edit** page (e.g. `UserInfoAdmin.vue`, `UserGroupEdit.vue`, `ChildEdit.vue`). The list page links to that page; the user confirms deletion there.
 
 ## Datatable row navigation
 
@@ -211,7 +239,7 @@ When a datatable row links to **edit**, **open**, or **detail**, always **naviga
 | Create | `<dialog>` on the list page, or a dedicated create route (e.g. `WebhookCreate.vue`) |
 | Edit / open / detail | New route with `:id` param (e.g. `/family/chores/:id`, `/control-panel/webhooks/:id`) |
 | Primary column | `RouterLink` to the edit/detail route |
-| Actions column | `RouterLink` labeled Edit, or navigate on row click |
+| Actions column | `RouterLink` labeled Edit, or navigate on row click — never a Delete button |
 
 Edit pages include a **Back** link in the section `#toolbar` returning to the list. On save, `router.push` back to the list. Reference: `ChoreEdit.vue`, `WebhookEdit.vue`, `ChildDetail.vue`.
 
