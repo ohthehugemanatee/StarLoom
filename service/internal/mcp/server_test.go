@@ -141,6 +141,8 @@ func TestWriteToolsRejectReadOnlyKey(t *testing.T) {
 		"starapp_create_webhook": {"url": "https://example.com/h", "secret": "s", "events": "stars.awarded"},
 		"starapp_update_webhook": {"id": 1},
 		"starapp_delete_webhook": {"id": 1},
+		"starapp_award_stars":    {"child_member_id": f.childMemberID, "amount": 1},
+		"starapp_revoke_stars":   {"child_member_id": f.childMemberID, "amount": 1},
 	}
 	for tool, args := range cases {
 		t.Run(tool, func(t *testing.T) {
@@ -149,4 +151,62 @@ func TestWriteToolsRejectReadOnlyKey(t *testing.T) {
 			require.Contains(t, text(t, res), "read-only")
 		})
 	}
+}
+
+func balanceOf(t *testing.T, c *client.Client, memberID int) float64 {
+	t.Helper()
+	return decode(t, call(t, c, "starapp_get_balance", map[string]any{"member_id": memberID}))["balance"].(float64)
+}
+
+func TestAwardAndRevokeStars(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	child := f.childMemberID
+
+	awarded := decode(t, call(t, c, "starapp_award_stars", map[string]any{"child_member_id": child, "amount": 5, "note": "tidied room"}))
+	require.EqualValues(t, 5, awarded["new_balance"])
+	require.Contains(t, text(t, call(t, c, "starapp_list_ledger", map[string]any{"member_id": child})), "tidied room")
+
+	revoked := decode(t, call(t, c, "starapp_revoke_stars", map[string]any{"child_member_id": child, "amount": 2}))
+	require.EqualValues(t, 3, revoked["new_balance"])
+
+	// Revoking more than the balance clamps to zero and still reports new_balance.
+	drained := decode(t, call(t, c, "starapp_revoke_stars", map[string]any{"child_member_id": child, "amount": 100}))
+	require.Contains(t, drained, "new_balance")
+	require.EqualValues(t, 0, balanceOf(t, c, child))
+}
+
+func TestAwardStarsRejectsBadInput(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	child := f.childMemberID
+
+	// AwardStars treats amount <= 0 as "use the default award", so the tool must refuse it.
+	for name, args := range map[string]map[string]any{
+		"missing amount": {"child_member_id": child},
+		"zero amount":    {"child_member_id": child, "amount": 0},
+		"negative":       {"child_member_id": child, "amount": -3},
+		"unknown member": {"child_member_id": 9999, "amount": 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.True(t, call(t, c, "starapp_award_stars", args).IsError)
+			require.EqualValues(t, 0, balanceOf(t, c, child))
+		})
+	}
+}
+
+func TestAwardStarsRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	viewer := &auth.AuthenticatedUser{
+		User: &store.UserAccountRow{ID: f.parentUserID, Username: "parent"},
+		RBAC: &rbac.EffectiveRBAC{IsSuperuser: false, Permissions: map[string]bool{rbac.PermissionFamilyView: true}},
+	}
+	c := f.connect(t, viewer)
+	args := map[string]any{"child_member_id": f.childMemberID, "amount": 1}
+
+	require.True(t, call(t, c, "starapp_award_stars", args).IsError)
+	require.True(t, call(t, c, "starapp_revoke_stars", args).IsError)
+
+	admin := f.connect(t, authUser(f.parentUserID, false))
+	require.EqualValues(t, 0, balanceOf(t, admin, f.childMemberID))
 }
