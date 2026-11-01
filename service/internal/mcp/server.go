@@ -237,7 +237,66 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		return jsonResult(map[string]any{"redemptions": res.Msg.GetRedemptions()})
 	})
 
+	mcpServer.AddTool(mcp.NewTool("starapp_award_stars",
+		mcp.WithDescription("Award stars to a child. Get child_member_id from starapp_list_members. Returns the child's new balance."),
+		mcp.WithNumber("child_member_id", mcp.Required(), mcp.Description("Child's member ID")),
+		mcp.WithNumber("amount", mcp.Required(), mcp.Description("Number of stars, 1 or more")),
+		mcp.WithString("note", mcp.Description("Reason shown in the ledger")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, amount, err := starArgs(req)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.AwardStars(ctx, connect.NewRequest(&apiv1.AwardStarsRequest{
+			ChildMemberId: id,
+			Amount:        amount,
+			Note:          req.GetString("note", ""),
+		}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"entry": res.Msg.GetEntry(), "new_balance": res.Msg.GetNewBalance()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_revoke_stars",
+		mcp.WithDescription("Take stars away from a child, never below zero. Get child_member_id from starapp_list_members. Returns the child's new balance."),
+		mcp.WithNumber("child_member_id", mcp.Required(), mcp.Description("Child's member ID")),
+		mcp.WithNumber("amount", mcp.Required(), mcp.Description("Number of stars, 1 or more")),
+		mcp.WithString("note", mcp.Description("Reason shown in the ledger")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, amount, err := starArgs(req)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.RevokeStars(ctx, connect.NewRequest(&apiv1.RevokeStarsRequest{
+			ChildMemberId: id,
+			Amount:        amount,
+			Note:          req.GetString("note", ""),
+		}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"entry": res.Msg.GetEntry(), "new_balance": res.Msg.GetNewBalance()})
+	})
+
 	return server.NewStreamableHTTPServer(mcpServer, server.WithEndpointPath("/mcp"))
+}
+
+// starArgs parses the shared award/revoke arguments. AwardStars treats an
+// amount of 0 or less as "use the default award", so it is rejected here.
+func starArgs(req mcp.CallToolRequest) (id, amount int32, err error) {
+	childID, err := req.RequireInt("child_member_id")
+	if err != nil {
+		return 0, 0, err
+	}
+	n, err := req.RequireInt("amount")
+	if err != nil {
+		return 0, 0, err
+	}
+	if n < 1 {
+		return 0, 0, fmt.Errorf("amount must be at least 1")
+	}
+	return int32(childID), int32(n), nil
 }
 
 func handleInit(ctx context.Context, srv *srvpkg.Server) (*mcp.CallToolResult, error) {
