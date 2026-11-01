@@ -143,6 +143,9 @@ func TestWriteToolsRejectReadOnlyKey(t *testing.T) {
 		"starapp_delete_webhook": {"id": 1},
 		"starapp_award_stars":    {"child_member_id": f.childMemberID, "amount": 1},
 		"starapp_revoke_stars":   {"child_member_id": f.childMemberID, "amount": 1},
+
+		"starapp_approve_redemption": {"redemption_id": 1},
+		"starapp_reject_redemption":  {"redemption_id": 1},
 	}
 	for tool, args := range cases {
 		t.Run(tool, func(t *testing.T) {
@@ -209,4 +212,90 @@ func TestAwardStarsRequiresPermission(t *testing.T) {
 
 	admin := f.connect(t, authUser(f.parentUserID, false))
 	require.EqualValues(t, 0, balanceOf(t, admin, f.childMemberID))
+}
+
+// pendingRedemption gives the child `stars` stars and a pending redemption of a
+// reward costing `cost`, and returns the redemption ID.
+func (f *fixture) pendingRedemption(t *testing.T, stars, cost int) int {
+	t.Helper()
+	ctx := context.Background()
+	const familyID = 1
+	if stars > 0 {
+		_, err := f.st.InsertLedgerEntry(ctx, store.StarLedgerRow{
+			FamilyID: familyID, ChildMemberID: f.childMemberID, Amount: stars, EntryType: store.LedgerTypeAward,
+		})
+		require.NoError(t, err)
+	}
+	rewardID, err := f.st.CreateReward(ctx, familyID, "Ice cream", "", cost, true, "")
+	require.NoError(t, err)
+	id, err := f.st.CreateRedemption(ctx, familyID, f.childMemberID, rewardID, cost, store.RedemptionPending, nil)
+	require.NoError(t, err)
+	return id
+}
+
+func redemptionStatus(t *testing.T, res *mcp.CallToolResult) string {
+	t.Helper()
+	return decode(t, res)["redemption"].(map[string]any)["status"].(string)
+}
+
+func TestApproveRedemption(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	id := f.pendingRedemption(t, 5, 3)
+
+	pending := decode(t, call(t, c, "starapp_list_redemptions", map[string]any{"status": "pending"}))
+	require.Len(t, pending["redemptions"], 1)
+
+	require.Equal(t, "approved", redemptionStatus(t, call(t, c, "starapp_approve_redemption", map[string]any{"redemption_id": id})))
+	require.EqualValues(t, 2, balanceOf(t, c, f.childMemberID))
+
+	// A resolved redemption cannot be resolved again, so stars are never spent twice.
+	require.True(t, call(t, c, "starapp_approve_redemption", map[string]any{"redemption_id": id}).IsError)
+	require.EqualValues(t, 2, balanceOf(t, c, f.childMemberID))
+}
+
+func TestRejectRedemption(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	id := f.pendingRedemption(t, 5, 3)
+
+	require.Equal(t, "rejected", redemptionStatus(t, call(t, c, "starapp_reject_redemption", map[string]any{"redemption_id": id})))
+	require.EqualValues(t, 5, balanceOf(t, c, f.childMemberID))
+	require.True(t, call(t, c, "starapp_approve_redemption", map[string]any{"redemption_id": id}).IsError)
+}
+
+func TestApproveRedemptionRejectsBadInput(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	id := f.pendingRedemption(t, 1, 3) // balance 1 < cost 3
+
+	for name, args := range map[string]map[string]any{
+		"missing id":           {},
+		"unknown id":           {"redemption_id": 9999},
+		"insufficient balance": {"redemption_id": id},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.True(t, call(t, c, "starapp_approve_redemption", args).IsError)
+			require.EqualValues(t, 1, balanceOf(t, c, f.childMemberID))
+		})
+	}
+	pending := decode(t, call(t, c, "starapp_list_redemptions", map[string]any{"status": "pending"}))
+	require.Len(t, pending["redemptions"], 1)
+}
+
+func TestResolveRedemptionRequiresPermission(t *testing.T) {
+	f := newFixture(t)
+	id := f.pendingRedemption(t, 5, 3)
+	viewer := &auth.AuthenticatedUser{
+		User: &store.UserAccountRow{ID: f.parentUserID, Username: "parent"},
+		RBAC: &rbac.EffectiveRBAC{IsSuperuser: false, Permissions: map[string]bool{rbac.PermissionFamilyView: true}},
+	}
+	c := f.connect(t, viewer)
+
+	require.True(t, call(t, c, "starapp_approve_redemption", map[string]any{"redemption_id": id}).IsError)
+	require.True(t, call(t, c, "starapp_reject_redemption", map[string]any{"redemption_id": id}).IsError)
+
+	admin := f.connect(t, authUser(f.parentUserID, false))
+	pending := decode(t, call(t, admin, "starapp_list_redemptions", map[string]any{"status": "pending"}))
+	require.Len(t, pending["redemptions"], 1)
 }
