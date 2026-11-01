@@ -299,3 +299,76 @@ func TestResolveRedemptionRequiresPermission(t *testing.T) {
 	pending := decode(t, call(t, admin, "starapp_list_redemptions", map[string]any{"status": "pending"}))
 	require.Len(t, pending["redemptions"], 1)
 }
+
+// adminToolArgs lists the tools whose handlers rely on the Connect interceptor
+// for their system.settings check, with arguments that pass validation.
+var adminToolArgs = map[string]map[string]any{
+	"starapp_list_cvars":     {},
+	"starapp_update_cvar":    {"key": "site_title", "value_string": "x"},
+	"starapp_list_webhooks":  {},
+	"starapp_create_webhook": {"url": "https://example.com/h", "secret": "s", "events": "stars.awarded"},
+	"starapp_update_webhook": {"id": 1},
+	"starapp_delete_webhook": {"id": 1},
+}
+
+func userWith(f *fixture, perms ...string) *auth.AuthenticatedUser {
+	granted := map[string]bool{}
+	for _, p := range perms {
+		granted[p] = true
+	}
+	return &auth.AuthenticatedUser{
+		User: &store.UserAccountRow{ID: f.parentUserID, Username: "parent"},
+		RBAC: &rbac.EffectiveRBAC{IsSuperuser: false, Permissions: granted},
+	}
+}
+
+func TestAdminToolsRequireSystemSettings(t *testing.T) {
+	f := newFixture(t)
+	viewer := f.connect(t, userWith(f, rbac.PermissionFamilyView))
+
+	for tool, args := range adminToolArgs {
+		t.Run(tool, func(t *testing.T) {
+			res := call(t, viewer, tool, args)
+			require.True(t, res.IsError, "tool ran for a user without system.settings")
+			require.Contains(t, text(t, res), "forbidden")
+		})
+	}
+
+	// A refused create_webhook leaves nothing behind.
+	admin := f.connect(t, authUser(f.parentUserID, false))
+	require.Empty(t, decode(t, call(t, admin, "starapp_list_webhooks", nil))["webhooks"])
+}
+
+func TestAdminToolsAllowSystemSettingsHolder(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, userWith(f, rbac.PermissionSystemSettings))
+
+	require.False(t, call(t, c, "starapp_list_cvars", nil).IsError)
+	created := decode(t, call(t, c, "starapp_create_webhook", adminToolArgs["starapp_create_webhook"]))
+	require.Contains(t, created, "id")
+	require.NotEmpty(t, decode(t, call(t, c, "starapp_list_webhooks", nil))["webhooks"])
+}
+
+// A new tool must be classified: either it is gated here (adminToolArgs) or its
+// handler enforces permissions itself (handlerGatedTools). Neither is the default.
+var handlerGatedTools = map[string]bool{
+	"starapp_ping": true, "starapp_init": true,
+	"starapp_list_members": true, "starapp_get_balance": true, "starapp_list_ledger": true,
+	"starapp_list_rewards": true, "starapp_list_redemptions": true,
+	"starapp_award_stars": true, "starapp_revoke_stars": true,
+	"starapp_approve_redemption": true, "starapp_reject_redemption": true,
+}
+
+func TestEveryToolIsClassified(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	listed, err := c.ListTools(context.Background(), mcp.ListToolsRequest{})
+	require.NoError(t, err)
+	require.NotEmpty(t, listed.Tools)
+
+	for _, tool := range listed.Tools {
+		_, admin := adminToolArgs[tool.Name]
+		require.True(t, admin || handlerGatedTools[tool.Name],
+			"%s is neither permission-gated in the MCP layer nor listed as enforced by its handler", tool.Name)
+	}
+}

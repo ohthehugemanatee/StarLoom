@@ -13,6 +13,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	apiv1 "github.com/jamesread/starapp/service/gen/starapp/api/v1"
+	"github.com/jamesread/starapp/service/gen/starapp/api/v1/apiv1connect"
 	"github.com/jamesread/starapp/service/internal/auth"
 	"github.com/jamesread/starapp/service/internal/buildinfo"
 	srvpkg "github.com/jamesread/starapp/service/internal/server"
@@ -43,6 +44,9 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 	mcpServer.AddTool(mcp.NewTool("starapp_list_cvars",
 		mcp.WithDescription("List runtime configuration variables (cvars)."),
 	), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := requirePermission(ctx, apiv1connect.StarAppServiceListCvarsProcedure); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		res, err := srv.ListCvars(ctx, connect.NewRequest(&apiv1.ListCvarsRequest{}))
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -56,6 +60,9 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithNumber("value_int", mcp.Description("Integer/boolean value (0 or 1 for booleans)")),
 		mcp.WithString("value_string", mcp.Description("String value when the cvar type is string")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := requirePermission(ctx, apiv1connect.StarAppServiceUpdateCvarProcedure); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		if err := requireWrite(ctx); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -77,6 +84,9 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 	mcpServer.AddTool(mcp.NewTool("starapp_list_webhooks",
 		mcp.WithDescription("List outbound webhook targets and supported event names."),
 	), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := requirePermission(ctx, apiv1connect.StarAppServiceListWebhooksProcedure); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		res, err := srv.ListWebhooks(ctx, connect.NewRequest(&apiv1.ListWebhooksRequest{}))
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -94,6 +104,9 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithString("events", mcp.Required(), mcp.Description("Comma-separated event names (e.g. stars.awarded,redemption.requested)")),
 		mcp.WithBoolean("enabled", mcp.Description("Whether delivery is enabled (default true)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := requirePermission(ctx, apiv1connect.StarAppServiceCreateWebhookProcedure); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		if err := requireWrite(ctx); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -129,6 +142,9 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithString("events", mcp.Description("Comma-separated event names")),
 		mcp.WithBoolean("enabled", mcp.Description("Whether delivery is enabled")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := requirePermission(ctx, apiv1connect.StarAppServiceUpdateWebhookProcedure); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		if err := requireWrite(ctx); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -153,6 +169,9 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithDescription("Delete an outbound webhook target."),
 		mcp.WithNumber("id", mcp.Required(), mcp.Description("Webhook target ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := requirePermission(ctx, apiv1connect.StarAppServiceDeleteWebhookProcedure); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		if err := requireWrite(ctx); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -356,6 +375,20 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// requirePermission applies the permission the Connect interceptor enforces for
+// procedure. MCP calls the handlers directly, so handlers that rely on the
+// interceptor need this check.
+func requirePermission(ctx context.Context, procedure string) error {
+	perm := auth.RequiredPermission(procedure)
+	if perm == "" {
+		return nil
+	}
+	if !auth.UserFromContext(ctx).HasPermission(perm) {
+		return fmt.Errorf("forbidden")
+	}
+	return nil
 }
 
 func requireWrite(ctx context.Context) error {
