@@ -26,6 +26,7 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		"StarApp",
 		buildinfo.Version,
 		server.WithToolCapabilities(false),
+		server.WithToolHandlerMiddleware(gate),
 		server.WithRecovery(),
 	)
 
@@ -44,9 +45,6 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 	mcpServer.AddTool(mcp.NewTool("starapp_list_cvars",
 		mcp.WithDescription("List runtime configuration variables (cvars)."),
 	), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := requirePermission(ctx, apiv1connect.StarAppServiceListCvarsProcedure); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 		res, err := srv.ListCvars(ctx, connect.NewRequest(&apiv1.ListCvarsRequest{}))
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -60,12 +58,6 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithNumber("value_int", mcp.Description("Integer/boolean value (0 or 1 for booleans)")),
 		mcp.WithString("value_string", mcp.Description("String value when the cvar type is string")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := requirePermission(ctx, apiv1connect.StarAppServiceUpdateCvarProcedure); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		if err := requireWrite(ctx); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 		key, err := req.RequireString("key")
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -84,9 +76,6 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 	mcpServer.AddTool(mcp.NewTool("starapp_list_webhooks",
 		mcp.WithDescription("List outbound webhook targets and supported event names."),
 	), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := requirePermission(ctx, apiv1connect.StarAppServiceListWebhooksProcedure); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 		res, err := srv.ListWebhooks(ctx, connect.NewRequest(&apiv1.ListWebhooksRequest{}))
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -104,12 +93,6 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithString("events", mcp.Required(), mcp.Description("Comma-separated event names (e.g. stars.awarded,redemption.requested)")),
 		mcp.WithBoolean("enabled", mcp.Description("Whether delivery is enabled (default true)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := requirePermission(ctx, apiv1connect.StarAppServiceCreateWebhookProcedure); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		if err := requireWrite(ctx); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 		eventsStr, err := req.RequireString("events")
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -142,12 +125,6 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithString("events", mcp.Description("Comma-separated event names")),
 		mcp.WithBoolean("enabled", mcp.Description("Whether delivery is enabled")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := requirePermission(ctx, apiv1connect.StarAppServiceUpdateWebhookProcedure); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		if err := requireWrite(ctx); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 		id := int32(req.GetFloat("id", 0))
 		if id < 1 {
 			return mcp.NewToolResultError("id is required"), nil
@@ -169,12 +146,6 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		mcp.WithDescription("Delete an outbound webhook target."),
 		mcp.WithNumber("id", mcp.Required(), mcp.Description("Webhook target ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if err := requirePermission(ctx, apiv1connect.StarAppServiceDeleteWebhookProcedure); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		if err := requireWrite(ctx); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 		id := int32(req.GetFloat("id", 0))
 		if id < 1 {
 			return mcp.NewToolResultError("id is required"), nil
@@ -348,6 +319,54 @@ func starArgs(req mcp.CallToolRequest) (id, amount int32, err error) {
 	return int32(childID), int32(n), nil
 }
 
+// toolGate says what a caller needs to run a tool. MCP calls the Server methods
+// directly and so skips the Connect interceptor; gate applies the same check
+// to every tool in one place.
+type toolGate struct {
+	procedure string // Connect procedure whose permission applies; "" means any authenticated caller
+	write     bool   // refused for read-only API keys
+}
+
+// A tool missing from this table is refused.
+var toolGates = map[string]toolGate{
+	"starapp_ping": {},
+	"starapp_init": {},
+
+	"starapp_list_cvars":     {procedure: apiv1connect.StarAppServiceListCvarsProcedure},
+	"starapp_update_cvar":    {apiv1connect.StarAppServiceUpdateCvarProcedure, true},
+	"starapp_list_webhooks":  {procedure: apiv1connect.StarAppServiceListWebhooksProcedure},
+	"starapp_create_webhook": {apiv1connect.StarAppServiceCreateWebhookProcedure, true},
+	"starapp_update_webhook": {apiv1connect.StarAppServiceUpdateWebhookProcedure, true},
+	"starapp_delete_webhook": {apiv1connect.StarAppServiceDeleteWebhookProcedure, true},
+
+	"starapp_list_members":       {procedure: apiv1connect.StarAppServiceListMembersProcedure},
+	"starapp_get_balance":        {procedure: apiv1connect.StarAppServiceGetMemberBalanceProcedure},
+	"starapp_list_ledger":        {procedure: apiv1connect.StarAppServiceListLedgerProcedure},
+	"starapp_list_rewards":       {procedure: apiv1connect.StarAppServiceListRewardsProcedure},
+	"starapp_list_redemptions":   {procedure: apiv1connect.StarAppServiceListRedemptionsProcedure},
+	"starapp_award_stars":        {apiv1connect.StarAppServiceAwardStarsProcedure, true},
+	"starapp_revoke_stars":       {apiv1connect.StarAppServiceRevokeStarsProcedure, true},
+	"starapp_approve_redemption": {apiv1connect.StarAppServiceApproveRedemptionProcedure, true},
+	"starapp_reject_redemption":  {apiv1connect.StarAppServiceRejectRedemptionProcedure, true},
+}
+
+func gate(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		g, ok := toolGates[req.Params.Name]
+		if !ok {
+			return mcp.NewToolResultError("forbidden"), nil
+		}
+		au := auth.UserFromContext(ctx)
+		if g.procedure != "" && !au.HasPermission(auth.RequiredPermission(g.procedure)) {
+			return mcp.NewToolResultError("forbidden"), nil
+		}
+		if g.write && au.ReadOnly {
+			return mcp.NewToolResultError("read-only API key cannot perform this action"), nil
+		}
+		return next(ctx, req)
+	}
+}
+
 func handleInit(ctx context.Context, srv *srvpkg.Server) (*mcp.CallToolResult, error) {
 	res, err := srv.Init(ctx, connect.NewRequest(&apiv1.InitRequest{}))
 	if err != nil {
@@ -375,25 +394,4 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
-}
-
-// requirePermission applies the permission the Connect interceptor enforces for
-// procedure. MCP calls the handlers directly, so handlers that rely on the
-// interceptor need this check.
-func requirePermission(ctx context.Context, procedure string) error {
-	perm := auth.RequiredPermission(procedure)
-	if perm == "" {
-		return nil
-	}
-	if !auth.UserFromContext(ctx).HasPermission(perm) {
-		return fmt.Errorf("forbidden")
-	}
-	return nil
-}
-
-func requireWrite(ctx context.Context) error {
-	if au := auth.UserFromContext(ctx); au != nil && au.ReadOnly {
-		return fmt.Errorf("read-only API key cannot perform this action")
-	}
-	return nil
 }

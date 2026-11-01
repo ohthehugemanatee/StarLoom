@@ -349,26 +349,26 @@ func TestAdminToolsAllowSystemSettingsHolder(t *testing.T) {
 	require.NotEmpty(t, decode(t, call(t, c, "starapp_list_webhooks", nil))["webhooks"])
 }
 
-// A new tool must be classified: either it is gated here (adminToolArgs) or its
-// handler enforces permissions itself (handlerGatedTools). Neither is the default.
-var handlerGatedTools = map[string]bool{
-	"starapp_ping": true, "starapp_init": true,
-	"starapp_list_members": true, "starapp_get_balance": true, "starapp_list_ledger": true,
-	"starapp_list_rewards": true, "starapp_list_redemptions": true,
-	"starapp_award_stars": true, "starapp_revoke_stars": true,
-	"starapp_approve_redemption": true, "starapp_reject_redemption": true,
-}
-
-func TestEveryToolIsClassified(t *testing.T) {
+// A user holding no permissions is refused on every registered tool except the
+// two that expose public metadata, so a new tool is gated by default.
+func TestUserWithoutPermissionsIsRefusedEverywhere(t *testing.T) {
 	f := newFixture(t)
-	c := f.connect(t, authUser(f.parentUserID, false))
+	c := f.connect(t, userWith(f))
+	open := map[string]bool{"starapp_ping": true, "starapp_init": true}
+
 	listed, err := c.ListTools(context.Background(), mcp.ListToolsRequest{})
 	require.NoError(t, err)
 	require.NotEmpty(t, listed.Tools)
 
 	for _, tool := range listed.Tools {
-		_, admin := adminToolArgs[tool.Name]
-		require.True(t, admin || handlerGatedTools[tool.Name],
-			"%s is neither permission-gated in the MCP layer nor listed as enforced by its handler", tool.Name)
+		t.Run(tool.Name, func(t *testing.T) {
+			res := call(t, c, tool.Name, nil)
+			if open[tool.Name] {
+				require.False(t, res.IsError)
+				return
+			}
+			require.True(t, res.IsError)
+			require.Contains(t, text(t, res), "forbidden")
+		})
 	}
 }
