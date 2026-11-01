@@ -167,6 +167,76 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		return jsonResult(map[string]any{"deleted": true, "id": id})
 	})
 
+	mcpServer.AddTool(mcp.NewTool("starapp_list_members",
+		mcp.WithDescription("List family members with their IDs, display names and roles (parent or child). Use these IDs for other tools."),
+	), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		res, err := srv.ListMembers(ctx, connect.NewRequest(&apiv1.ListMembersRequest{}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"members": res.Msg.GetMembers()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_get_balance",
+		mcp.WithDescription("Get a member's current star balance."),
+		mcp.WithNumber("member_id", mcp.Required(), mcp.Description("Member ID from starapp_list_members")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireInt("member_id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.GetMemberBalance(ctx, connect.NewRequest(&apiv1.GetMemberBalanceRequest{MemberId: int32(id)}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"member_id": id, "balance": res.Msg.GetBalance()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_list_ledger",
+		mcp.WithDescription("List a member's recent star ledger entries (awards, revocations, redemptions), newest first."),
+		mcp.WithNumber("member_id", mcp.Required(), mcp.Description("Member ID from starapp_list_members")),
+		mcp.WithNumber("limit", mcp.Description("Maximum entries to return")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireInt("member_id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.ListLedger(ctx, connect.NewRequest(&apiv1.ListLedgerRequest{
+			MemberId: int32(id),
+			Limit:    int32(req.GetInt("limit", 0)),
+		}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"entries": res.Msg.GetEntries()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_list_rewards",
+		mcp.WithDescription("List rewards children can redeem, with their star cost."),
+		mcp.WithBoolean("include_inactive", mcp.Description("Include deactivated rewards (default false)")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		res, err := srv.ListRewards(ctx, connect.NewRequest(&apiv1.ListRewardsRequest{
+			IncludeInactive: req.GetBool("include_inactive", false),
+		}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"rewards": res.Msg.GetRewards()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_list_redemptions",
+		mcp.WithDescription("List reward redemptions, optionally filtered by status."),
+		mcp.WithString("status", mcp.Description("pending, approved or rejected (omit for all)")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		res, err := srv.ListRedemptions(ctx, connect.NewRequest(&apiv1.ListRedemptionsRequest{
+			Status: req.GetString("status", ""),
+		}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"redemptions": res.Msg.GetRedemptions()})
+	})
+
 	return server.NewStreamableHTTPServer(mcpServer, server.WithEndpointPath("/mcp"))
 }
 
