@@ -10,7 +10,7 @@ StarApp is a family star-rewards app: parents award stars for good behavior; chi
 - **Frontend**: Vue 3, Vite, PicoCrank
 - **Database**: SQLite with sql-migrate
 
-Domain flows (families, stars, rewards, redemptions) are implemented. Settings (cvars) and outbound webhooks are available via the API and MCP.
+Domain flows (families, stars, rewards, redemptions) are implemented. Settings (cvars), outbound webhooks, and the star and redemption flows are available via the API and MCP.
 
 ## Discovery endpoints
 
@@ -35,7 +35,8 @@ Read-only API keys cannot use mutating MCP tools or RPCs that change state.
 
 - **Endpoint**: `GET/POST /mcp` on the same base URL as the app (e.g. `http://localhost:8080/mcp`).
 - **Transport**: MCP Streamable HTTP.
-- **Auth**: Same as Connect API (currently open).
+- **Auth**: `Authorization: Bearer <api-key>` required. A missing or invalid key gets 401.
+- **Permissions**: tools run as the key's user. Cvar and webhook tools need the `system.settings` permission. The other tools need the same roles as the matching API calls.
 
 ### Cursor configuration (HTTP)
 
@@ -43,13 +44,14 @@ Read-only API keys cannot use mutating MCP tools or RPCs that change state.
 {
   "mcpServers": {
     "starapp": {
-      "url": "http://localhost:8080/mcp"
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer <api-key>"
+      }
     }
   }
 }
 ```
-
-Add an `Authorization` header when parent auth is enabled.
 
 ### MCP tools
 
@@ -63,6 +65,17 @@ Add an `Authorization` header when parent auth is enabled.
 | `starapp_create_webhook` | Create webhook | `url`, `secret`, `events` (required); `enabled` |
 | `starapp_update_webhook` | Update webhook | `id` (required); `url`, `secret`, `events`, `enabled` |
 | `starapp_delete_webhook` | Delete webhook | `id` (required) |
+| `starapp_list_members` | List family members with IDs, names and roles | none |
+| `starapp_get_balance` | A member's star balance | `member_id` (required) |
+| `starapp_list_ledger` | A member's recent star ledger entries | `member_id` (required); `limit` |
+| `starapp_list_rewards` | List rewards and their star cost | `include_inactive` |
+| `starapp_list_redemptions` | List redemptions | `status` (`pending`, `approved` or `rejected`; omit for all) |
+| `starapp_award_stars` | Award stars to a child | `child_member_id`, `amount` (1 or more) (required); `note` |
+| `starapp_revoke_stars` | Take stars from a child, never below zero | `child_member_id`, `amount` (1 or more) (required); `note` |
+| `starapp_approve_redemption` | Approve a pending redemption and deduct its stars | `redemption_id` (required) |
+| `starapp_reject_redemption` | Reject a pending redemption | `redemption_id` (required) |
+
+The star tools take numeric IDs. Get member IDs from `starapp_list_members` and redemption IDs from `starapp_list_redemptions`.
 
 Webhook `events` use comma-separated names: `stars.awarded`, `redemption.requested`, `redemption.resolved`, `webhooks.test`.
 
