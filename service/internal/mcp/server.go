@@ -279,6 +279,36 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		return jsonResult(map[string]any{"entry": res.Msg.GetEntry(), "new_balance": res.Msg.GetNewBalance()})
 	})
 
+	mcpServer.AddTool(mcp.NewTool("starapp_approve_redemption",
+		mcp.WithDescription("Approve a pending reward redemption and deduct its stars from the child. Get redemption_id from starapp_list_redemptions."),
+		mcp.WithNumber("redemption_id", mcp.Required(), mcp.Description("Pending redemption ID")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireInt("redemption_id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.ApproveRedemption(ctx, connect.NewRequest(&apiv1.ApproveRedemptionRequest{RedemptionId: int32(id)}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"redemption": res.Msg.GetRedemption()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_reject_redemption",
+		mcp.WithDescription("Reject a pending reward redemption. No stars are deducted. Get redemption_id from starapp_list_redemptions."),
+		mcp.WithNumber("redemption_id", mcp.Required(), mcp.Description("Pending redemption ID")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireInt("redemption_id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.RejectRedemption(ctx, connect.NewRequest(&apiv1.RejectRedemptionRequest{RedemptionId: int32(id)}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"redemption": res.Msg.GetRedemption()})
+	})
+
 	return server.NewStreamableHTTPServer(mcpServer, server.WithEndpointPath("/mcp"))
 }
 
