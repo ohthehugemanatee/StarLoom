@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/authn"
 	"connectrpc.com/connect"
@@ -146,6 +147,8 @@ func TestWriteToolsRejectReadOnlyKey(t *testing.T) {
 
 		"starapp_approve_redemption": {"redemption_id": 1},
 		"starapp_reject_redemption":  {"redemption_id": 1},
+		"starapp_complete_chore":     {"chore_id": 1, "child_member_id": f.childMemberID},
+		"starapp_uncomplete_chore":   {"chore_id": 1, "child_member_id": f.childMemberID},
 	}
 	for tool, args := range cases {
 		t.Run(tool, func(t *testing.T) {
@@ -357,6 +360,7 @@ var handlerGatedTools = map[string]bool{
 	"starapp_list_rewards": true, "starapp_list_redemptions": true,
 	"starapp_award_stars": true, "starapp_revoke_stars": true,
 	"starapp_approve_redemption": true, "starapp_reject_redemption": true,
+	"starapp_get_todays_chores": true, "starapp_complete_chore": true, "starapp_uncomplete_chore": true,
 }
 
 func TestEveryToolIsClassified(t *testing.T) {
@@ -371,4 +375,121 @@ func TestEveryToolIsClassified(t *testing.T) {
 		require.True(t, admin || handlerGatedTools[tool.Name],
 			"%s is neither permission-gated in the MCP layer nor listed as enforced by its handler", tool.Name)
 	}
+}
+
+// chore creates a chore worth reward stars, scheduled every day and assigned to
+// memberIDs, and returns its ID.
+func (f *fixture) chore(t *testing.T, reward int, memberIDs ...int) int {
+	t.Helper()
+	id, err := f.st.CreateChore(context.Background(), 1, 0, "Tidy room", reward, 127, memberIDs)
+	require.NoError(t, err)
+	return id
+}
+
+func todaysChores(t *testing.T, c *client.Client, memberID int) []map[string]any {
+	t.Helper()
+	raw := decode(t, call(t, c, "starapp_get_todays_chores", map[string]any{"member_id": memberID}))["chores"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, r := range raw {
+		out = append(out, r.(map[string]any))
+	}
+	return out
+}
+
+func TestCompleteAndUncompleteChore(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	child := f.childMemberID
+	chore := f.chore(t, 3, child)
+	args := map[string]any{"chore_id": chore, "child_member_id": child}
+
+	chores := todaysChores(t, c, child)
+	require.Len(t, chores, 1)
+	require.EqualValues(t, chore, chores[0]["chore_id"])
+	require.Equal(t, false, chores[0]["completed"])
+
+	done := decode(t, call(t, c, "starapp_complete_chore", args))
+	require.Equal(t, "Chore completed", done["message"])
+	require.EqualValues(t, 3, done["new_balance"])
+	require.Equal(t, true, todaysChores(t, c, child)[0]["completed"])
+
+	// Completing twice must not award twice.
+	again := decode(t, call(t, c, "starapp_complete_chore", args))
+	require.Equal(t, "Already completed", again["message"])
+	require.EqualValues(t, 3, again["new_balance"])
+
+	undone := decode(t, call(t, c, "starapp_uncomplete_chore", args))
+	require.Equal(t, "Chore uncompleted", undone["message"])
+	require.EqualValues(t, 0, undone["new_balance"])
+	require.Equal(t, false, todaysChores(t, c, child)[0]["completed"])
+
+	require.Equal(t, "Not completed", decode(t, call(t, c, "starapp_uncomplete_chore", args))["message"])
+	require.EqualValues(t, 0, balanceOf(t, c, child))
+}
+
+func TestCompleteChoreOnAPastDate(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	child := f.childMemberID
+	chore := f.chore(t, 3, child)
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	args := map[string]any{"chore_id": chore, "child_member_id": child, "date": yesterday}
+
+	require.EqualValues(t, 3, decode(t, call(t, c, "starapp_complete_chore", args))["new_balance"])
+	require.Equal(t, false, todaysChores(t, c, child)[0]["completed"], "today must be unaffected")
+	require.EqualValues(t, 0, decode(t, call(t, c, "starapp_uncomplete_chore", args))["new_balance"])
+}
+
+func TestCompleteChoreRejectsBadInput(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(t, authUser(f.parentUserID, false))
+	child := f.childMemberID
+	chore := f.chore(t, 3, child)
+	unassigned, err := f.st.CreateMember(context.Background(), 1, "Kai", store.MemberRoleChild, nil, "")
+	require.NoError(t, err)
+
+	for name, args := range map[string]map[string]any{
+		"missing chore":     {"child_member_id": child},
+		"missing child":     {"chore_id": chore},
+		"unknown chore":     {"chore_id": 9999, "child_member_id": child},
+		"unassigned member": {"chore_id": chore, "child_member_id": unassigned},
+		"malformed date":    {"chore_id": chore, "child_member_id": child, "date": "yesterday"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.True(t, call(t, c, "starapp_complete_chore", args).IsError)
+			require.EqualValues(t, 0, balanceOf(t, c, child))
+			require.EqualValues(t, 0, balanceOf(t, c, unassigned))
+		})
+	}
+
+	res := call(t, c, "starapp_complete_chore", map[string]any{"chore_id": chore, "child_member_id": child, "date": "yesterday"})
+	require.Contains(t, text(t, res), "YYYY-MM-DD")
+}
+
+func TestChoreToolsFollowTheAPIRules(t *testing.T) {
+	f := newFixture(t)
+	admin := f.connect(t, authUser(f.parentUserID, false))
+	sam := f.childMemberID
+	kaiUser, err := f.st.CreateUserAccount(context.Background(), "kai", "hash", store.UserCreatedByAdmin)
+	require.NoError(t, err)
+	kai, err := f.st.CreateMember(context.Background(), 1, "Kai", store.MemberRoleChild, &kaiUser, "")
+	require.NoError(t, err)
+	chore := f.chore(t, 3, sam, kai)
+
+	// Without chores.complete a caller cannot complete or view other people's chores.
+	viewer := f.connect(t, userWith(f, rbac.PermissionFamilyView))
+	require.True(t, call(t, viewer, "starapp_complete_chore", map[string]any{"chore_id": chore, "child_member_id": sam}).IsError)
+	require.True(t, call(t, viewer, "starapp_get_todays_chores", map[string]any{"member_id": sam}).IsError)
+	require.EqualValues(t, 0, balanceOf(t, admin, sam))
+
+	// A child may complete their own chore but not a sibling's.
+	kaiAU := &auth.AuthenticatedUser{
+		User: &store.UserAccountRow{ID: kaiUser, Username: "kai"},
+		RBAC: &rbac.EffectiveRBAC{IsSuperuser: false, Permissions: map[string]bool{}},
+	}
+	kid := f.connect(t, kaiAU)
+	require.False(t, call(t, kid, "starapp_complete_chore", map[string]any{"chore_id": chore, "child_member_id": kai}).IsError)
+	require.True(t, call(t, kid, "starapp_complete_chore", map[string]any{"chore_id": chore, "child_member_id": sam}).IsError)
+	require.EqualValues(t, 3, balanceOf(t, admin, kai))
+	require.EqualValues(t, 0, balanceOf(t, admin, sam))
 }
