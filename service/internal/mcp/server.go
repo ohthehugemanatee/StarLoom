@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -328,6 +329,67 @@ func NewHandler(srv *srvpkg.Server) http.Handler {
 		return jsonResult(map[string]any{"redemption": res.Msg.GetRedemption()})
 	})
 
+	mcpServer.AddTool(mcp.NewTool("starapp_get_todays_chores",
+		mcp.WithDescription("List a member's chores for today with chore IDs and whether each is done. Use chore_id with starapp_complete_chore."),
+		mcp.WithNumber("member_id", mcp.Required(), mcp.Description("Member ID from starapp_list_members")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireInt("member_id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.GetMemberTodaysChores(ctx, connect.NewRequest(&apiv1.GetMemberTodaysChoresRequest{MemberId: int32(id)}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		chores := make([]map[string]any, 0, len(res.Msg.GetTodaysChores()))
+		for _, c := range res.Msg.GetTodaysChores() {
+			chores = append(chores, map[string]any{
+				"chore_id":        c.GetChoreId(),
+				"title":           c.GetTitle(),
+				"star_reward":     c.GetStarReward(),
+				"child_member_id": c.GetChildMemberId(),
+				"completed":       c.GetCompleted(),
+				"paused":          c.GetPaused(),
+				"date":            c.GetDate(),
+			})
+		}
+		return jsonResult(map[string]any{"chores": chores})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_complete_chore",
+		mcp.WithDescription("Mark a chore done for a child and award its stars. Already-done chores are left alone. Get chore_id from starapp_get_todays_chores. Returns the child's new balance."),
+		mcp.WithNumber("chore_id", mcp.Required(), mcp.Description("Chore ID")),
+		mcp.WithNumber("child_member_id", mcp.Required(), mcp.Description("Child's member ID")),
+		mcp.WithString("date", mcp.Description("YYYY-MM-DD, default today")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		choreID, childID, date, err := choreArgs(req)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.CompleteChore(ctx, connect.NewRequest(&apiv1.CompleteChoreRequest{ChoreId: choreID, ChildMemberId: childID, Date: date}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"message": res.Msg.GetStandardResponse().GetMessage(), "new_balance": res.Msg.GetNewBalance()})
+	})
+
+	mcpServer.AddTool(mcp.NewTool("starapp_uncomplete_chore",
+		mcp.WithDescription("Mark a chore not done for a child and take its stars back. Chores that are not done are left alone. Returns the child's new balance."),
+		mcp.WithNumber("chore_id", mcp.Required(), mcp.Description("Chore ID")),
+		mcp.WithNumber("child_member_id", mcp.Required(), mcp.Description("Child's member ID")),
+		mcp.WithString("date", mcp.Description("YYYY-MM-DD, default today")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		choreID, childID, date, err := choreArgs(req)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		res, err := srv.UncompleteChore(ctx, connect.NewRequest(&apiv1.UncompleteChoreRequest{ChoreId: choreID, ChildMemberId: childID, Date: date}))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(map[string]any{"message": res.Msg.GetStandardResponse().GetMessage(), "new_balance": res.Msg.GetNewBalance()})
+	})
+
 	return server.NewStreamableHTTPServer(mcpServer, server.WithEndpointPath("/mcp"))
 }
 
@@ -346,6 +408,26 @@ func starArgs(req mcp.CallToolRequest) (id, amount int32, err error) {
 		return 0, 0, fmt.Errorf("amount must be at least 1")
 	}
 	return int32(childID), int32(n), nil
+}
+
+// choreArgs parses the shared complete/uncomplete arguments. The handler reads
+// a malformed date as "not scheduled", so it is rejected here with a clearer error.
+func choreArgs(req mcp.CallToolRequest) (choreID, childID int32, date string, err error) {
+	c, err := req.RequireInt("chore_id")
+	if err != nil {
+		return 0, 0, "", err
+	}
+	m, err := req.RequireInt("child_member_id")
+	if err != nil {
+		return 0, 0, "", err
+	}
+	date = req.GetString("date", "")
+	if date != "" {
+		if _, err := time.Parse("2006-01-02", date); err != nil {
+			return 0, 0, "", fmt.Errorf("date must be YYYY-MM-DD")
+		}
+	}
+	return int32(c), int32(m), date, nil
 }
 
 func handleInit(ctx context.Context, srv *srvpkg.Server) (*mcp.CallToolResult, error) {

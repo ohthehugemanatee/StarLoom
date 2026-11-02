@@ -74,8 +74,11 @@ Read-only API keys cannot use mutating MCP tools or RPCs that change state.
 | `starapp_revoke_stars` | Take stars from a child, never below zero | `child_member_id`, `amount` (1 or more) (required); `note` |
 | `starapp_approve_redemption` | Approve a pending redemption and deduct its stars | `redemption_id` (required) |
 | `starapp_reject_redemption` | Reject a pending redemption | `redemption_id` (required) |
+| `starapp_get_todays_chores` | A member's chores for today and whether each is done | `member_id` (required) |
+| `starapp_complete_chore` | Mark a chore done and award its stars; no-op if already done | `chore_id`, `child_member_id` (required); `date` (`YYYY-MM-DD`, default today) |
+| `starapp_uncomplete_chore` | Mark a chore not done and take its stars back; no-op if not done | `chore_id`, `child_member_id` (required); `date` (`YYYY-MM-DD`, default today) |
 
-The star tools take numeric IDs. Get member IDs from `starapp_list_members` and redemption IDs from `starapp_list_redemptions`.
+The star tools take numeric IDs. Get member IDs from `starapp_list_members`, redemption IDs from `starapp_list_redemptions` and chore IDs from `starapp_get_todays_chores`.
 
 Webhook `events` use comma-separated names: `stars.awarded`, `redemption.requested`, `redemption.resolved`, `webhooks.test`.
 
